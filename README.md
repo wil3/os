@@ -1,4 +1,0 @@
-os
-==
-
-Online Signature (OS)
