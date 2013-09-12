@@ -2,6 +2,7 @@ package koch.desktop.os;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.FileWriter;
@@ -24,16 +25,16 @@ public class OnlineSignatureService extends TimerTask{
 	
 	private static final String DELIMITER = ",";
 	private static final int HOURS_IN_DAY = 24;
-	private static final long ONE_HOUR_IN_MILLISECONDS = 1000 * 20;//60 * 60;
+	private static final long ONE_HOUR_IN_MILLISECONDS = 1000 * 60 * 60;
 	
 	private static final String FILE_NAME = "time.dat";
 	private TimeData [] mTimeData;
-	private long mLastDate;
-	private int mTotalDays;
+	private long mLastDate = new Date().getTime();
+	private int mTotalDays = 1;
 	
 	class TimeData {
-		private double probability;
-		private int days;
+		private double probability = 0;
+		private int days = 0;
 		public void update(){
 			this.probability = (days * 1.0) / mTotalDays;
 		}
@@ -59,9 +60,16 @@ public class OnlineSignatureService extends TimerTask{
 				  today.get(Calendar.MONTH),
 				  today.get(Calendar.DATE),
 				  nextHour,
-			      0
+				 0
 			    );
-			    return result.getTime();	}
+			   return result.getTime();
+		 // return today.getTime();
+	}
+	private void initializeData(){
+		for (int i=0; i<HOURS_IN_DAY;i++){
+			mTimeData[i] = new TimeData();
+		}
+	}
 	/**
 	 * Read data to file
 	 * @param dataFilePath
@@ -138,22 +146,22 @@ public class OnlineSignatureService extends TimerTask{
 				out.write("\r\n");
 			}
 			
-		} catch (IOException e1) {
-			e1.printStackTrace();
+		} catch (IOException e) {
+			System.err.println("IO Exception: " + e.getMessage());
 		} finally {
 
 			if (out != null) {
 				try {
 					out.close();
 				} catch (IOException e) {
-					e.printStackTrace();
+					System.err.println("IO Exception closing stream: " + e.getMessage());
 				}
 			}
 			if (fstream != null) {
 				try {
 					fstream.close();
 				} catch (IOException e) {
-					e.printStackTrace();
+					System.err.println("IO Exception closing stream: " + e.getMessage());
 				}
 			}
 			
@@ -164,7 +172,14 @@ public class OnlineSignatureService extends TimerTask{
 	 */
 	@Override
 	public void run() {
+		System.out.println("check..");
+		if (new File(FILE_NAME).exists()){ //not initialized yet
+			readData(FILE_NAME);
+		} else {
+			initializeData();
+		}
 		
+		updateTotalDays();
 		
 		//Should be about on the hour
 		Calendar today = new GregorianCalendar();
@@ -173,11 +188,12 @@ public class OnlineSignatureService extends TimerTask{
 		//update record
 		TimeData td = mTimeData[currentHour];
 		if (hasInternet()){
-			
+			td.days++; 
 		}
 		td.update();
 
-		readData(FILE_NAME);
+		//clean up
+		mLastDate = getTime();
 		
 		writeData(FILE_NAME);
 	}
@@ -193,8 +209,34 @@ public class OnlineSignatureService extends TimerTask{
 	}
 	
 	private void updateTotalDays(){
+		Date lastDate = new Date(mLastDate);
+		Calendar lastDay = new GregorianCalendar();
+		lastDay.setTime(lastDate);
+
+		
+		Calendar today = new GregorianCalendar();
+		
+		mTotalDays += daysBetween(today, lastDay);
 		
 	}
+
+	/**
+	 * Dont want to use 3rd party so taking performance hit
+	 * 
+	 * @param startDate
+	 * @param endDate
+	 * @return
+	 */
+	private long daysBetween(Calendar startDate, Calendar endDate) {
+		Calendar date = (Calendar) startDate.clone();
+        long daysBetween = 0;
+        while (date.before(endDate)) {
+            date.add(Calendar.DAY_OF_MONTH, 1);
+            daysBetween++;
+        }
+        return daysBetween;
+    }
+	
 	
 	/**
 	 * @param args
