@@ -21,6 +21,7 @@ import org.jfree.chart.renderer.xy.StandardXYBarPainter;
 import org.jfree.chart.renderer.xy.XYBarRenderer;
 import org.jfree.chart.renderer.xy.XYItemRenderer;
 import org.jfree.data.time.Hour;
+import org.jfree.data.time.Minute;
 import org.jfree.data.time.TimeSeries;
 import org.jfree.data.time.TimeSeriesCollection;
 import org.jfree.data.time.Year;
@@ -33,9 +34,16 @@ import org.jfree.ui.RefineryUtilities;
  * @author wil
  *
  */
-public class PMFConsoleDisplay extends ApplicationFrame{
+public class OnlineSignatureVisualizer extends ApplicationFrame{
 
-	private DataStore mDS = new DataStore();
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = -1724990394149391612L;
+	
+	
+	
+	private DataStore mDS;
 
 
 		     /**
@@ -75,9 +83,12 @@ public class PMFConsoleDisplay extends ApplicationFrame{
 		     *
 		     * @param title  the frame title.
 		     */
-		    public PMFConsoleDisplay(final String title) {
+		    public OnlineSignatureVisualizer(final String title) {
 
 		        super(title);
+		        
+		       mDS = new DataStore();
+		       mDS.readData(DataStore.DEFAULT_FILE_NAME);
 
 		        final TimeSeriesCollection data = createDataset();
 		        //data.setDomainIsPointsInTime(false);
@@ -115,11 +126,14 @@ public class PMFConsoleDisplay extends ApplicationFrame{
 		    }
 
 		    public TimeSeriesCollection createDataset() {
-				mDS.readData(DataStore.DEFAULT_FILE_NAME);
 
 		        final TimeSeries t = new TimeSeries("p");
 		       for (int i=0; i<mDS.getTimeData().length; i++){
-		    	   t.add(new Hour(i,1,1,1900), mDS.getTimeData()[i].getProbability());
+		    	   int minuteOfDay = i * (60 / mDS.getSamplesInHour());
+		    	   
+		    	   int hour = minuteOfDay/60;
+		    	   int minute = minuteOfDay%60;
+		    	   t.add(new Minute(minute, hour, 1, 1, 1984), mDS.getTimeData()[i].getProbability());
 		       }
 		        return new TimeSeriesCollection(t);
 
@@ -131,7 +145,7 @@ public class PMFConsoleDisplay extends ApplicationFrame{
 		     */
 		    public static void main(final String[] args) {
 
-		        final PMFConsoleDisplay os = new PMFConsoleDisplay("PMF Access to Internet");
+		        final OnlineSignatureVisualizer os = new OnlineSignatureVisualizer("PMF Access to Internet");
 		        os.pack();
 		        RefineryUtilities.centerFrameOnScreen(os);
 		        os.setVisible(true);

@@ -9,26 +9,47 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.Date;
 
+/**
+ * Interface used to store data
+ * File format:
+ * 
+ * Line 1: Last date the service was run
+ * Line 2: Total number of days since the beginning of the experiement
+ * Line 3+: Sample taken, first value is overal probability, second value days reachable
+ * 
+ * @author wil
+ *
+ */
 public class DataStore {
-	private static final int HOURS_IN_DAY = 24;
+	//private static final int HOURS_IN_DAY = 24;
 
 	private static final String DELIMITER = ",";
 	//TODO allow to specify location
 	public static final String DEFAULT_FILE_NAME = "time.dat"; 
 	private TimeData [] mTimeData;
 	private long mLastDate = new Date().getTime();
-	
-	
-
-
+	private int mNumberOfSamples;
+	private int mSamplesInHour;
 	private int mTotalDays = 1;
 	
+	/**
+	 * 
+	 * @param samplesInHour Default samples an hour if there is already not a data store with the sample requirements, if that is found it is overwritten.
+	 */
+	public DataStore(int samplesInHour){
+		mSamplesInHour = samplesInHour;
+		
+	}
+	/**
+	 * Default, read samples straight from data store
+	 */
 	public DataStore(){
-		mTimeData = new TimeData[HOURS_IN_DAY];
-
+		
 	}
 	private void initializeData(){
-		for (int i=0; i<HOURS_IN_DAY;i++){
+		mNumberOfSamples = mSamplesInHour * 24;
+		mTimeData = new TimeData[mNumberOfSamples];
+		for (int i=0; i<mNumberOfSamples;i++){
 			mTimeData[i] = new TimeData();
 		}
 	}
@@ -46,16 +67,27 @@ public class DataStore {
 	    try {
 			reader = new FileReader(dataFilePath);
 			input =  new BufferedReader(reader);
+			String sSample = input.readLine();
+			if (sSample != null){
+				//Overwrite
+				mSamplesInHour = Integer.parseInt(sSample);
+			} else { throw new IOException("No sample size.");}
+			
+			mNumberOfSamples = mSamplesInHour * 24;
+			mTimeData = new TimeData[mNumberOfSamples];
+			
+			
 			String  sLastDate = input.readLine();
 			if (sLastDate!=null){
 				mLastDate = Long.parseLong(sLastDate);
-			}
+			} else {throw new IOException("No last date specified.");}
 			String  sTotalDays = input.readLine();
 			if (sTotalDays!=null){
 				mTotalDays = Integer.parseInt(sTotalDays);
-			}
+			} else {throw new IOException("No total days specified.");}
+			
 			String line = null;
-			for (int i=0; i<HOURS_IN_DAY; i++){
+			for (int i=0; i<mNumberOfSamples; i++){
 		        if (( line = input.readLine()) != null){ //should be 24 lines here
 		        	String [] fields = line.split(DELIMITER);
 		        	TimeData td = new TimeData();
@@ -100,13 +132,15 @@ public class DataStore {
 			out = new BufferedWriter(fstream);
 			
 			//header stuff
+			out.write(mSamplesInHour+"");
+			out.write("\r\n");
 			out.write(mLastDate+"");
 			out.write("\r\n");
 			out.write(mTotalDays+"");
 			out.write("\r\n");
 
 			//write out all data
-			for (int i=0; i<HOURS_IN_DAY;i++){
+			for (int i=0; i<mNumberOfSamples;i++){
 				TimeData td = mTimeData[i];
 				out.write(td.probability + DELIMITER + td.days);
 				out.write("\r\n");
@@ -152,7 +186,12 @@ public class DataStore {
 	public void setTotalDays(int totalDays) {
 		this.mTotalDays = totalDays;
 	}
-	
+	public int getSamplesInHour() {
+		return mSamplesInHour;
+	}
+	public void setSamplesInHour(int samplesInHour) {
+		this.mSamplesInHour = samplesInHour;
+	}
 	class TimeData {
 		private double probability = 0;
 		private int days = 0;
@@ -174,6 +213,7 @@ public class DataStore {
 		public void update(){
 			this.probability = (days * 1.0) / mTotalDays;
 		}
+		
 	}
 	
 }

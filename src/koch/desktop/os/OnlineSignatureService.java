@@ -1,6 +1,8 @@
 package koch.desktop.os;
 
+import java.io.File;
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.Calendar;
@@ -8,6 +10,10 @@ import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.Timer;
 import java.util.TimerTask;
+
+import org.joda.time.DateTime;
+import org.joda.time.DateTimeZone;
+import org.joda.time.Days;
 
 import koch.desktop.os.DataStore.TimeData;
 
@@ -17,40 +23,54 @@ import koch.desktop.os.DataStore.TimeData;
  * @author wil
  *
  */
-public class OnlineSignatureService extends TimerTask{
-
+public class OnlineSignatureService extends TimerTask{	
+	private static final String LOCK_FILE = ".lock";
+	private final int mSamplesInHour;//4;
 	
-	private static final long ONE_HOUR_IN_MILLISECONDS = 1000 * 60 * 60;
-	private static final int NUMBER_OF_SAMPLES  = 0;
-	//TODO add to config
+	//TODO add to config or command line
 	//TODO this might be down but still have internet access
-	private static final String HOST_URL = "http://github.com";
-	private DataStore mDS = new DataStore();
+	private static final String HOST_URL = "github.com";
+	private DataStore mDS;
+	private Timer mTimer = new Timer();
+	private File mLockFile  = new File(LOCK_FILE);
 	
-	public OnlineSignatureService(){
-		Timer timer = new Timer();
+	public OnlineSignatureService(int samplesInHour){
+		
+	
+
+		mSamplesInHour = samplesInHour;
+		mDS = new DataStore(mSamplesInHour);
+		
+		//Use zulu time so signatures can be compared at any time zone, were actually using millisec since epoch so its ok
+		//DateTimeZone.setDefault( DateTimeZone.UTC);
+		long period = 1000 * 60 * 60 / mSamplesInHour;
+		
 		//Schedule timer to go off when ever a sample is to be taken
-		timer.scheduleAtFixedRate(this, getNextHour(), ONE_HOUR_IN_MILLISECONDS);
+		mTimer.scheduleAtFixedRate(this, getStartTime(), period);
 	}
 	
 	/**
-	 * Get next on the hour
+	 * Depending on the sample rate 
 	 * @return
 	 */
-	private Date getNextHour(){
-		//TODO this sampling storage needs to be in 
-		  Calendar today = new GregorianCalendar();
-		  int currentHour = today.get(Calendar.HOUR_OF_DAY);
-		  int nextHour = currentHour + 1;
-		  Calendar result = new GregorianCalendar(
-				  today.get(Calendar.YEAR),
-				  today.get(Calendar.MONTH),
-				  today.get(Calendar.DATE),
-				  nextHour,
-				 0
-			    );
-			   return result.getTime();
-		 // return today.getTime();
+	private Date getStartTime(){
+		
+		DateTime now = new DateTime();
+		
+		int minuteIncrement = 60/mSamplesInHour;
+		
+		int minuteOfHour = now.getMinuteOfHour();
+		int hour = now.getHourOfDay();
+
+		int minute = ((minuteOfHour/minuteIncrement) + 1) * minuteIncrement;
+		if (minute == 60){
+			minute = 0;
+			hour++;
+		}
+		
+		DateTime startTime = new DateTime(now.getYear(), now.getMonthOfYear(), now.getDayOfMonth(), hour, minute);
+		System.out.println("Starting sample at time = "+startTime.toString());
+		return startTime.toDate();
 	}
 	
 	/**
@@ -58,7 +78,14 @@ public class OnlineSignatureService extends TimerTask{
 	 */
 	@Override
 	public void run() {
-		System.out.println("check..");
+		//test if stop file is present
+		
+		//write lock file
+		createLockFile();
+		
+		DateTime currentTime = new DateTime();
+
+		System.out.println("Sampling at " + currentTime.toString());
 		
 		mDS.readData(DataStore.DEFAULT_FILE_NAME);
 		
@@ -66,34 +93,46 @@ public class OnlineSignatureService extends TimerTask{
 		updateTotalDays();
 		
 		//Should be about on the hour
-		Calendar today = new GregorianCalendar();
-		int currentHour = today.get(Calendar.HOUR_OF_DAY);
+		int currentMinute = currentTime.getMinuteOfDay();
 		
+		int index = currentMinute / (60 / mSamplesInHour);
 		//update record
 		
-		TimeData td = mDS.getTimeData()[currentHour];
-		if (hasInternet(HOST_URL)){
+		TimeData td = mDS.getTimeData()[index];
+		if (isInternetReachable(HOST_URL)){
 			td.incDays();
 		}
 		td.update();
 
 		//clean up
-		mDS.setLastDate(getTime());
+		mDS.setLastDate(currentTime.getMillis());
 		
 		mDS.writeData(DataStore.DEFAULT_FILE_NAME);
+		//System.out.println("Writing results");
+		//System.out.println("");
+		
+		//remove lock file
+		removeLockFile();
+		
 	}
 	
-	
-	private long getTime(){
-		  Calendar today = new GregorianCalendar();
-		  return today.getTimeInMillis();
+	//TODO not meant for file locking but I think it is ok in this situation, check on this
+	private void createLockFile(){
+		try {
+			mLockFile.createNewFile();
+		} catch (IOException e) {
+			System.err.println("IO Exception: " + e.getMessage());
+		}
 	}
-	
-	private boolean hasInternet(String hostUrl){
+	private void removeLockFile(){
+		mLockFile.delete();
+	}
+
+	private static boolean isInternetReachable(String hostUrl){
 		Socket socket = null;
 		boolean reachable = false;
 		try {
-		    socket = new Socket(hostUrl, 80);
+		    socket = new Socket(InetAddress.getByName(hostUrl), 80);
 		    reachable = true;
 		} catch (UnknownHostException e) {
 			System.err.println("UnknownHostException: " + e.getMessage());
@@ -106,39 +145,22 @@ public class OnlineSignatureService extends TimerTask{
 	}
 	
 	private void updateTotalDays(){
-		Date lastDate = new Date(mDS.getLastDate());
-		Calendar lastDay = new GregorianCalendar();
-		lastDay.setTime(lastDate);
-
-		Calendar today = new GregorianCalendar();
 		
-		mDS.setTotalDays(mDS.getTotalDays()+daysBetween(today, lastDay));
+		DateTime lastDate = new DateTime(mDS.getLastDate());
+		DateTime today = new DateTime();
+
+		int daysBetween = Days.daysBetween(today.toLocalDate(), lastDate.toLocalDate()).getDays();
+		mDS.setTotalDays(mDS.getTotalDays()+ daysBetween);
 		
 	}
 
-	/**
-	 * Dont want to use 3rd party so taking performance hit
-	 * 
-	 * @param startDate
-	 * @param endDate
-	 * @return
-	 */
-	private int daysBetween(Calendar startDate, Calendar endDate) {
-		Calendar date = (Calendar) startDate.clone();
-        int daysBetween = 0;
-        while (date.before(endDate)) {
-            date.add(Calendar.DAY_OF_MONTH, 1);
-            daysBetween++;
-        }
-        return daysBetween;
-    }
-	
 	
 	/**
 	 * @param args
 	 */
 	public static void main(String[] args) {
-		new OnlineSignatureService();
+		
+		new OnlineSignatureService(60);
 	}
 
 	
